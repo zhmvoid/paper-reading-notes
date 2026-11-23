@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="机器学习、大语言模型、MoE、Attention 与分布式训练方向的论文阅读笔记。">
+<title>论文阅读笔记 · Research Notes</title>
+<style>
+:root{--bg:#f4f6fb;--paper:#fff;--ink:#172033;--muted:#69758a;--line:#e4e9f2;--blue:#3157d5;--navy:#111c36;--teal:#087f8c;--shadow:0 14px 40px rgba(25,40,75,.07)}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7}
+a{color:inherit;text-decoration:none}a:hover{color:var(--blue)}
+.top{background:var(--navy);color:#dce5fb;padding:14px max(22px,calc((100vw - 1160px)/2));display:flex;justify-content:space-between;align-items:center;gap:18px;font-size:13px}
+.brand{font-weight:800;letter-spacing:.02em}.top small{color:#a9b8d7}
+.hero{background:radial-gradient(circle at 80% 10%,rgba(78,112,239,.32),transparent 27%),radial-gradient(circle at 12% 100%,rgba(8,127,140,.24),transparent 30%),linear-gradient(120deg,#111c36,#1c315b 68%,#24416b);color:#f8fbff;padding:72px max(22px,calc((100vw - 1160px)/2)) 66px}
+.eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#aebfff;font-weight:800}
+h1{font-size:clamp(34px,5vw,58px);letter-spacing:-.045em;line-height:1.12;margin:16px 0}
+.intro{max-width:730px;color:#d4def3;font-size:17px}
+.hero-meta{display:flex;flex-wrap:wrap;gap:9px;margin-top:25px}.hero-meta span{border:1px solid #ffffff35;background:#ffffff0d;border-radius:30px;padding:6px 11px;color:#dbe5fb;font-size:12px}
+.wrap{max-width:1160px;margin:0 auto;padding:38px 22px 76px}
+.toolbar{display:flex;justify-content:space-between;align-items:end;gap:18px;margin-bottom:22px}.toolbar h2{margin:0;font-size:24px;letter-spacing:-.025em}.sub{font-size:13px;color:var(--muted);margin-top:4px}
+.search{width:min(330px,100%);border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:white;font-size:13px;outline:none}.search:focus{border-color:#9aafff;box-shadow:0 0 0 3px #edf1ff}
+.feature{display:grid;grid-template-columns:1.5fr .8fr;gap:22px;margin:22px 0 40px}
+.feature-main,.feature-side,.paper-card,.topic{background:var(--paper);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow)}
+.feature-main{padding:30px;position:relative;overflow:hidden}.feature-main:after{content:"MLA";position:absolute;right:20px;bottom:-42px;font-size:150px;font-weight:900;color:#f1f4fb;letter-spacing:-.08em;pointer-events:none}
+.feature-main>*{position:relative;z-index:1}.label{font-size:11px;font-weight:850;letter-spacing:.1em;color:var(--blue);text-transform:uppercase}
+.feature-main h3{font-size:28px;line-height:1.28;letter-spacing:-.03em;margin:12px 0}.feature-main p{max-width:690px;color:#5e6a80;font-size:14px}
+.tags{display:flex;flex-wrap:wrap;gap:7px;margin:17px 0 22px}.tag{background:#eef2ff;color:#4059b1;padding:5px 9px;border-radius:7px;font-size:11px;font-weight:700}
+.open{display:inline-flex;align-items:center;gap:9px;background:var(--blue);color:white;padding:10px 15px;border-radius:9px;font-size:13px;font-weight:750}.open:hover{color:white;background:#2447bd}
+.feature-side{padding:24px;background:#fafdff}.feature-side h4{margin:0 0 12px;font-size:14px}.stat{padding:12px 0;border-bottom:1px solid var(--line)}.stat:last-child{border:0}.stat strong{display:block;font-size:22px;color:#1d315f}.stat span{font-size:11px;color:var(--muted)}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin:38px 0 15px}.section-head h2{font-size:20px;margin:0}.count{font-size:12px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.paper-card{padding:21px;transition:transform .18s ease,box-shadow .18s ease}.paper-card:hover{transform:translateY(-3px);box-shadow:0 18px 42px rgba(25,40,75,.1)}
+.card-top{display:flex;justify-content:space-between;align-items:center;gap:10px}.type{font-size:10px;font-weight:850;letter-spacing:.09em;color:var(--teal);background:#e8f7f7;padding:5px 8px;border-radius:6px}.date{font-size:11px;color:#8a95a8}
+.paper-card h3{font-size:18px;line-height:1.35;margin:13px 0 7px}.paper-card p{font-size:13px;color:var(--muted);margin:0 0 15px}.card-bottom{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;color:var(--blue);font-weight:750}
+.topics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.topic{padding:17px}.topic strong{display:block;font-size:14px}.topic span{font-size:11px;color:var(--muted)}
+.empty{display:none;padding:24px;border:1px dashed #cbd4e3;border-radius:12px;color:var(--muted);text-align:center;background:#fff}
+.footer{border-top:1px solid var(--line);padding:22px 0 0;margin-top:48px;color:var(--muted);font-size:11px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+@media(max-width:760px){.feature{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.topics{grid-template-columns:1fr 1fr}.toolbar{align-items:stretch;flex-direction:column}.search{width:100%}.hero{padding-top:52px}}
+@media(max-width:440px){.topics{grid-template-columns:1fr}.feature-main{padding:22px}.feature-main h3{font-size:23px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">RESEARCH NOTES / 论文阅读笔记</div>
+  <small>持续阅读 · 数学推导 · 源码验证</small>
+</header>
+<section class="hero">
+  <div class="eyebrow">Personal Research Library</div>
+  <h1>把论文读透，<br>把原理连到代码。</h1>
+  <p class="intro">记录大语言模型、Attention、Mixture-of-Experts 与分布式训练方向的论文阅读过程。每篇笔记尽量包含问题背景、核心思想、数学推导、实验结论和源码入口。</p>
+  <div class="hero-meta">
+    <span>LLM Architecture</span><span>Attention & MLA</span><span>MoE</span><span>Distributed Training</span><span>Paper → Math → Code</span>
+  </div>
+</section>
+<main class="wrap">
+  <div class="toolbar">
+    <div><h2>论文笔记库</h2><div class="sub">从一篇论文开始，逐步建立可检索的研究知识库。</div></div>
+    <input class="search" id="search" type="search" placeholder="搜索论文、主题或关键词…">
+  </div>
+
+  <section class="feature" aria-label="精选论文">
+    <article class="feature-main">
+      <div class="label">Featured note · 01</div>
+      <h3>DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model</h3>
+      <p>重点研读 Multi-head Latent Attention（MLA）、Matrix Absorption、DeepSeekMoE、Device-limited Routing 与三类负载均衡损失，并延伸分析 MLA 与 Context Parallelism 的结合。</p>
+      <div class="tags"><span class="tag">MLA</span><span class="tag">Matrix Absorption</span><span class="tag">DeepSeekMoE</span><span class="tag">Load Balancing</span><span class="tag">CP / EP</span></div>
+      <a class="open" href="deepseek-v2.html">阅读完整笔记 <span aria-hidden="true">→</span></a>
+    </article>
+    <aside class="feature-side">
+      <h4>本篇笔记速览</h4>
+      <div class="stat"><strong>236B / 21B</strong><span>总参数量 / 每 token 激活参数量</span></div>
+      <div class="stat"><strong>576</strong><span>每 token、每层 MLA KV cache 元素数（按论文配置）</span></div>
+      <div class="stat"><strong>17 章节</strong><span>从架构、公式到源码与研究问题</span></div>
+    </aside>
+  </section>
+
+  <div class="section-head"><h2>全部笔记</h2><span class="count" id="count">1 篇笔记</span></div>
+  <div class="grid" id="cards">
+    <a class="paper-card searchable" href="deepseek-v2.html" data-search="deepseek v2 deepseek-v2 mla matrix absorption 矩阵吸收 moe mixture of experts 负载均衡 load balancing context parallelism cp ep attention latent">
+      <div class="card-top"><span class="type">LLM ARCHITECTURE</span><span class="date">2026-11-23</span></div>
+      <h3>DeepSeek-V2：强大、经济且高效的混合专家语言模型</h3>
+      <p>MLA 低秩 KV 压缩、矩阵吸收的 Key / Value 推导、Decoupled RoPE、DeepSeekMoE 路由和负载均衡。</p>
+      <div class="card-bottom"><span>论文 + 数学 + 源码</span><span>打开笔记 →</span></div>
+    </a>
+  </div>
+  <div class="empty" id="empty">没有找到匹配的笔记。试试 MLA、MoE、Attention 或论文名称。</div>
+
+  <div class="section-head"><h2>研究主题</h2><span class="count">按方向组织</span></div>
+  <div class="topics">
+    <div class="topic"><strong>Attention / MLA</strong><span>KV Cache、低秩表示、矩阵吸收、RoPE</span></div>
+    <div class="topic"><strong>MoE / Routing</strong><span>专家划分、Top-K、路由与负载均衡</span></div>
+    <div class="topic"><strong>并行与系统</strong><span>Context Parallelism、Expert Parallelism、通信优化</span></div>
+  </div>
+  <footer class="footer"><span>Research Notes · 论文阅读与技术研究记录</span><span>内容以论文原文为依据，源码链接以对应仓库版本为准。</span></footer>
+</main>
+<script>
+const input=document.getElementById('search');
+const cards=[...document.querySelectorAll('.searchable')];
+const empty=document.getElementById('empty');
+const count=document.getElementById('count');
+input.addEventListener('input',()=>{
+  const q=input.value.trim().toLowerCase();
+  let shown=0;
+  cards.forEach(card=>{
+    const hit=!q||card.innerText.toLowerCase().includes(q)||card.dataset.search.includes(q);
+    card.style.display=hit?'block':'none';
+    if(hit)shown++;
+  });
+  empty.style.display=shown?'none':'block';
+  count.textContent=shown+' 篇笔记';
+});
+</script>
+</body>
+</html>

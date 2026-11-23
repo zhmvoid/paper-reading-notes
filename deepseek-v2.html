@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DeepSeek-V2 论文中文研读笔记：MLA、矩阵吸收、DeepSeekMoE、设备受限路由、负载均衡与 Context Parallelism。">
+<title>DeepSeek-V2 论文研读笔记｜MLA × Matrix Absorption × DeepSeekMoE</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$']], displayMath: [['$$', '$$']] },
+  chtml: { scale: 1.0 },
+  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+};
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root {
+  --bg: #f5f7fb;
+  --paper: #ffffff;
+  --ink: #172033;
+  --muted: #64748b;
+  --line: #e5eaf2;
+  --blue: #3157d5;
+  --blue-soft: #edf2ff;
+  --teal: #087f8c;
+  --teal-soft: #e8f7f7;
+  --amber: #a45b09;
+  --amber-soft: #fff5e5;
+  --red: #b42318;
+  --red-soft: #fff0ee;
+  --code: #111827;
+  --shadow: 0 10px 35px rgba(24, 39, 75, .07);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 28px; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.72;
+}
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.progress { position: fixed; inset: 0 auto auto 0; height: 3px; width: 0; background: var(--blue); z-index: 50; }
+.topbar {
+  background: #101a33;
+  color: #dbe5ff;
+  padding: 12px max(22px, calc((100vw - 1440px)/2));
+  display: flex; align-items: center; justify-content: space-between; gap: 18px;
+  font-size: 13px;
+}
+.topbar a { color: #cbd7ff; }
+.topbar .right { color: #9fb0db; }
+.hero {
+  color: #f8fbff;
+  background:
+    radial-gradient(circle at 78% 16%, rgba(71, 111, 245, .34), transparent 28%),
+    radial-gradient(circle at 15% 100%, rgba(7, 127, 140, .26), transparent 30%),
+    linear-gradient(120deg, #101a33 0%, #17284d 55%, #203b68 100%);
+  padding: 62px max(22px, calc((100vw - 1440px)/2)) 54px;
+}
+.eyebrow { color: #a8bcff; font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.hero h1 { max-width: 1000px; font-size: clamp(30px, 4.2vw, 52px); line-height: 1.16; letter-spacing: -.035em; margin: 14px 0 14px; }
+.subtitle { color: #d5def3; max-width: 900px; font-size: 17px; }
+.authors { margin-top: 22px; color: #aebcdb; font-size: 13px; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.tag { border: 1px solid rgba(214,226,255,.25); color: #dce6ff; background: rgba(255,255,255,.07); border-radius: 99px; padding: 5px 11px; font-size: 12px; }
+.hero-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 26px; }
+.hero-actions a { border: 1px solid rgba(255,255,255,.28); border-radius: 9px; padding: 9px 13px; color: #fff; font-size: 13px; }
+.hero-actions a.primary { background: #dce7ff; color: #14244c; border-color: #dce7ff; font-weight: 700; }
+.layout { max-width: 1440px; margin: 0 auto; padding: 30px 22px 80px; display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 28px; align-items: start; }
+.sidebar { position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow: auto; }
+.side-card { background: var(--paper); border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow); padding: 17px 15px; }
+.side-title { font-size: 12px; color: var(--muted); font-weight: 800; letter-spacing: .1em; margin: 2px 8px 12px; }
+#searchBox { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; font-size: 13px; outline: none; margin-bottom: 12px; }
+#searchBox:focus { border-color: #8ca3ff; box-shadow: 0 0 0 3px #edf1ff; }
+.toc { list-style: none; padding: 0; margin: 0; }
+.toc li { margin: 2px 0; }
+.toc a { display: block; color: #526078; padding: 6px 9px; border-radius: 7px; font-size: 12.5px; line-height: 1.45; }
+.toc a:hover { background: #f3f6fc; text-decoration: none; color: var(--blue); }
+.toc a.active { color: var(--blue); background: var(--blue-soft); font-weight: 750; }
+.toc .sub a { padding-left: 22px; font-size: 11.5px; }
+.sidebar-note { color: var(--muted); font-size: 11px; padding: 12px 8px 2px; }
+main { min-width: 0; }
+.card, section {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: var(--shadow); padding: clamp(20px, 3vw, 34px); margin-bottom: 20px;
+}
+section h2 { font-size: 24px; line-height: 1.3; margin: 0 0 18px; letter-spacing: -.02em; }
+section h3 { font-size: 18px; margin: 28px 0 10px; line-height: 1.4; }
+section h4 { font-size: 15px; margin: 20px 0 8px; }
+p { margin: 10px 0; }
+.lead { font-size: 16px; color: #26334c; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.kicker { color: var(--blue); font-weight: 800; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 7px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0; }
+.metric { background: #f7f9fd; border: 1px solid var(--line); border-radius: 12px; padding: 15px; }
+.metric strong { display: block; font-size: 25px; line-height: 1.2; letter-spacing: -.03em; color: #1d2d53; }
+.metric span { display: block; font-size: 11px; color: var(--muted); margin-top: 5px; }
+.callout { border-left: 4px solid var(--blue); background: var(--blue-soft); padding: 14px 16px; border-radius: 0 10px 10px 0; margin: 16px 0; }
+.callout.teal { border-left-color: var(--teal); background: var(--teal-soft); }
+.callout.amber { border-left-color: #d58a22; background: var(--amber-soft); }
+.callout.red { border-left-color: var(--red); background: var(--red-soft); }
+.callout strong { color: #1c315d; }
+.badge { display: inline-block; border-radius: 5px; background: #eef2f7; color: #536176; padding: 2px 7px; font-size: 11px; font-weight: 750; margin-right: 4px; }
+.badge.blue { background: #e9efff; color: #3157d5; }
+.badge.teal { background: #e5f5f5; color: #087f8c; }
+.badge.amber { background: #fff1d8; color: #955300; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 14px 0 18px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 11px; border-bottom: 1px solid var(--line); }
+th { color: #46546b; background: #f7f9fc; font-size: 12px; font-weight: 800; }
+tr:last-child td { border-bottom: 0; }
+.mathbox { background: #fbfcff; border: 1px solid #e5eaf5; border-radius: 12px; padding: 15px 17px; margin: 14px 0; overflow-x: auto; }
+.mathbox .caption { color: var(--muted); font-size: 11px; margin-bottom: 8px; font-weight: 750; }
+.mathbox .mjx-container { color: #17284a !important; }
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.three-col { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.mini-card { border: 1px solid var(--line); border-radius: 12px; padding: 15px; background: #fcfdff; }
+.mini-card h4 { margin: 0 0 7px; }
+.diagram { border: 1px solid var(--line); border-radius: 13px; background: linear-gradient(180deg,#fcfdff,#f6f8fc); padding: 14px; margin: 18px 0; overflow-x: auto; }
+.diagram svg { display: block; width: 100%; min-width: 620px; height: auto; }
+.code { background: var(--code); color: #e5edff; border-radius: 11px; padding: 15px 17px; overflow-x: auto; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 13px 0; }
+.code .comment { color: #9ba9c7; }
+.code .key { color: #91d7db; }
+.code .value { color: #f4c98b; }
+ul, ol { padding-left: 22px; }
+li { margin: 5px 0; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
+.source-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.source { border: 1px solid var(--line); border-radius: 11px; padding: 13px; }
+.source strong { display: block; font-size: 13px; margin-bottom: 4px; }
+.source a { font-size: 12px; word-break: break-all; }
+.source p { font-size: 11px; color: var(--muted); margin: 6px 0 0; }
+.checklist label { display: flex; gap: 9px; align-items: flex-start; margin: 9px 0; font-size: 13px; }
+.checklist input { margin-top: 5px; accent-color: var(--blue); }
+.footer { color: var(--muted); font-size: 11px; text-align: center; padding: 24px 10px 10px; }
+.pill-row { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0; }
+.pill { font-size: 11px; color: #536078; background: #f0f3f8; padding: 5px 9px; border-radius: 7px; }
+.hidden { display: none !important; }
+@media (max-width: 980px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; max-height: none; }
+  .toc { columns: 2; }
+  .grid4 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 620px) {
+  .topbar { align-items: flex-start; flex-direction: column; }
+  .hero { padding-top: 42px; }
+  .layout { padding-left: 12px; padding-right: 12px; }
+  .grid4, .two-col, .three-col, .source-list { grid-template-columns: 1fr; }
+  .toc { columns: 1; }
+  section h2 { font-size: 21px; }
+  table { font-size: 11.5px; }
+  th, td { padding: 8px 7px; }
+}
+@media print {
+  body { background: white; }
+  .topbar, .sidebar, .progress, .hero-actions, #searchBox { display: none !important; }
+  .hero { background: white; color: #111; padding: 20px 0; }
+  .hero h1, .subtitle, .authors, .tag { color: #111; }
+  .layout { display: block; max-width: none; padding: 0; }
+  section, .card { box-shadow: none; break-inside: avoid; }
+  a { color: #111; }
+}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="topbar">
+  <div><a href="index.html" style="color:#dbe5ff">← 论文阅读笔记首页</a>　·　论文研读</div>
+  <div class="right"><a href="https://yaoyuanzhou.github.io/papers/tm20k.html" target="_blank" rel="noreferrer">参考笔记：TM20K 论文解读</a>　·　更新：2026-11-23</div>
+</div>
+
+<header class="hero">
+  <div class="eyebrow">Paper Notes · Mixture-of-Experts × Latent Attention</div>
+  <h1>DeepSeek-V2：强大、经济且高效的<br>混合专家语言模型</h1>
+  <div class="subtitle">从 MLA 的低秩 KV 联合压缩出发，推导 Matrix Absorption 的矩阵变换，再读 DeepSeekMoE 的专家路由、设备通信约束与三层负载均衡。</div>
+  <div class="authors">DeepSeek-AI · arXiv:2405.04434 · 2024-05 · 研读版本：v5</div>
+  <div class="tags">
+    <span class="tag">MLA</span><span class="tag">Matrix Absorption</span><span class="tag">DeepSeekMoE</span>
+    <span class="tag">Top-K Routing</span><span class="tag">Load Balancing</span><span class="tag">EP / CP</span>
+  </div>
+  <div class="hero-actions">
+    <a class="primary" href="https://arxiv.org/html/2405.04434v5" target="_blank" rel="noreferrer">阅读论文 HTML</a>
+    <a href="https://github.com/deepseek-ai/DeepSeek-V2" target="_blank" rel="noreferrer">官方代码与模型</a>
+    <a href="#mla-absorb">直接跳到矩阵吸收推导</a>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="side-card">
+      <div class="side-title">本页目录 · TABLE OF CONTENTS</div>
+      <input id="searchBox" type="search" placeholder="搜索本页关键词…">
+      <ul class="toc" id="toc">
+        <li><a href="#summary">一句话总结</a></li>
+        <li><a href="#motivation">背景与动机</a></li>
+        <li><a href="#architecture">整体架构</a></li>
+        <li><a href="#mla">MLA：低秩 KV 联合压缩</a></li>
+        <li class="sub"><a href="#mla-absorb">Matrix Absorption 数学推导</a></li>
+        <li class="sub"><a href="#rope">Decoupled RoPE</a></li>
+        <li class="sub"><a href="#cache">KV Cache 量化分析</a></li>
+        <li><a href="#moe">DeepSeekMoE</a></li>
+        <li class="sub"><a href="#routing">Device-limited Routing</a></li>
+        <li class="sub"><a href="#balance">三类负载均衡损失</a></li>
+        <li><a href="#training">训练配置与系统实现</a></li>
+        <li><a href="#results">实验结果与解读</a></li>
+        <li><a href="#cp">MLA 与 Context Parallelism</a></li>
+        <li><a href="#code">源码阅读路线</a></li>
+        <li><a href="#pitfalls">易混淆点与局限</a></li>
+        <li><a href="#questions">进一步研究问题</a></li>
+        <li><a href="#references">参考资料</a></li>
+      </ul>
+      <div class="sidebar-note">提示：公式依赖 MathJax CDN，首次打开需联网加载；打印时可使用浏览器“打印 / 另存为 PDF”。</div>
+    </div>
+  </aside>
+
+  <main id="content">
+    <section id="summary">
+      <div class="kicker">01 · Executive Summary</div>
+      <h2>一句话总结</h2>
+      <p class="lead"><strong>DeepSeek-V2 用两种不同层面的稀疏化解决两类成本：</strong>MLA 将每个 token 的多头 Key/Value 压缩成共享 latent cache，降低长上下文推理的 KV 存储与访存成本；DeepSeekMoE 将 FFN 拆成大量细粒度专家，只激活少量专家，并用设备受限路由与三类辅助损失控制 EP 通信和负载不均。</p>
+      <div class="grid4">
+        <div class="metric"><strong>236B</strong><span>总参数量</span></div>
+        <div class="metric"><strong>21B</strong><span>每 token 激活参数</span></div>
+        <div class="metric"><strong>93.3%</strong><span>相对 DeepSeek 67B 的 KV Cache 降幅</span></div>
+        <div class="metric"><strong>5.76×</strong><span>最大生成吞吐提升（论文报告）</span></div>
+      </div>
+      <div class="callout">
+        <strong>最重要的阅读主线：</strong>先理解 $c^{KV}$ 如何产生，再推导 $W^{UK}$ 为什么能左移到 Query 路径，最后理解为什么 RoPE 必须解耦。只记住“KV 压缩”而不理解“矩阵吸收”，就没有读懂 MLA 的推理优化。
+      </div>
+      <h3>四项核心贡献</h3>
+      <ol>
+        <li><strong>MLA：</strong>通过低秩 Key-Value 联合压缩，缓存 latent vector，而不是缓存每个 head 的完整 K/V。</li>
+        <li><strong>Matrix Absorption：</strong>利用线性代数重排，将 Key 上投影吸收到 Query，将 Value 上投影合并到输出侧，避免在每个历史 token 上重建 K/V。</li>
+        <li><strong>DeepSeekMoE：</strong>细粒度专家划分 + 共享专家隔离，提高专家专业化并减少知识冗余。</li>
+        <li><strong>通信与负载控制：</strong>Device-limited Routing 限制单 token 触达的设备数，再通过 Expert / Device / Communication 三类辅助损失平衡负载。</li>
+      </ol>
+      <p class="small muted">论文来源：<a href="https://arxiv.org/html/2405.04434v5" target="_blank" rel="noreferrer">DeepSeek-V2, Abstract 与 Sections 2–3</a>。</p>
+    </section>
+
+    <section id="motivation">
+      <div class="kicker">02 · Motivation</div>
+      <h2>背景与动机：两个不同的瓶颈</h2>
+      <div class="two-col">
+        <div class="mini-card">
+          <h4>推理侧：KV Cache 随上下文增长</h4>
+          <p>标准 MHA 每个 token、每层需要缓存所有 attention heads 的 K 和 V。上下文越长、并发请求越多，KV Cache 越容易成为显存容量和带宽瓶颈。</p>
+          <span class="badge blue">MLA 解决</span>
+        </div>
+        <div class="mini-card">
+          <h4>训练侧：稠密 FFN 计算成本高</h4>
+          <p>大模型若每个 token 都经过全部 FFN 参数，计算成本会随总参数量增长。MoE 通过条件计算只激活少数专家，但引入路由与跨设备通信成本。</p>
+          <span class="badge teal">DeepSeekMoE 解决</span>
+        </div>
+      </div>
+      <h3>为什么不是直接使用 MQA / GQA？</h3>
+      <p>MQA 和 GQA 通过减少 KV heads 降低缓存量，但它们直接减少了 Key/Value 的独立表示数量。DeepSeek-V2 的出发点是：尽量保留多头注意力的表达能力，同时改变 KV 的存储表示——先联合压缩，再在计算时利用矩阵结合律绕开显式恢复。</p>
+      <div class="callout teal">
+        <strong>关键区分：</strong>MLA 不是简单把多个 head 合并成一个 KV head。它让不同 head 共享一个低维 KV latent，再通过每个 head 对应的上投影矩阵恢复其 K/V 语义；Matrix Absorption 则让推理时可以不显式执行这次恢复。
+      </div>
+    </section>
+
+    <section id="architecture">
+      <div class="kicker">03 · Architecture Overview</div>
+      <h2>整体架构：Attention 与 FFN 分别做优化</h2>
+      <div class="diagram">
+        <svg viewBox="0 0 980 310" role="img" aria-label="DeepSeek-V2 Transformer block architecture">
+          <defs>
+            <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#64748b"/></marker>
+          </defs>
+          <rect x="25" y="25" width="150" height="54" rx="10" fill="#eaf0ff" stroke="#9eb2f8"/>
+          <text x="100" y="48" text-anchor="middle" font-size="14" font-weight="700" fill="#1d367b">Hidden States</text>
+          <text x="100" y="66" text-anchor="middle" font-size="11" fill="#53678f">hₜ</text>
+          <path d="M175 52 H220" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/>
+          <rect x="230" y="17" width="310" height="70" rx="12" fill="#e7f7f6" stroke="#7cc9c5"/>
+          <text x="385" y="43" text-anchor="middle" font-size="16" font-weight="700" fill="#075d66">MLA</text>
+          <text x="385" y="64" text-anchor="middle" font-size="12" fill="#256d74">KV latent compression + Matrix Absorption</text>
+          <path d="M540 52 H585" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/>
+          <rect x="595" y="25" width="150" height="54" rx="10" fill="#f0f3f8" stroke="#bdc7d6"/>
+          <text x="670" y="48" text-anchor="middle" font-size="14" font-weight="700" fill="#34425b">Residual</text>
+          <text x="670" y="66" text-anchor="middle" font-size="11" fill="#65748b">+ Norm</text>
+          <path d="M745 52 H790" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/>
+          <rect x="800" y="17" width="155" height="70" rx="12" fill="#fff3df" stroke="#e7bd78"/>
+          <text x="877" y="43" text-anchor="middle" font-size="16" font-weight="700" fill="#87500c">DeepSeekMoE</text>
+          <text x="877" y="64" text-anchor="middle" font-size="12" fill="#94611f">2 shared + Top-6 / 160</text>
+          <path d="M877 87 V135" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/>
+          <rect x="710" y="145" width="245" height="65" rx="10" fill="#fff9ed" stroke="#e7bd78"/>
+          <text x="832" y="171" text-anchor="middle" font-size="13" font-weight="700" fill="#87500c">Device-limited Routing</text>
+          <text x="832" y="190" text-anchor="middle" font-size="11" fill="#94611f">最多 M=3 个设备 / token</text>
+          <path d="M710 178 H660" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/>
+          <rect x="385" y="145" width="265" height="65" rx="10" fill="#f1f5fa" stroke="#c5d0df"/>
+          <text x="517" y="171" text-anchor="middle" font-size="13" font-weight="700" fill="#34425b">EP All-to-All + Experts</text>
+          <text x="517" y="190" text-anchor="middle" font-size="11" fill="#65748b">8-way Expert Parallelism</text>
+          <path d="M517 210 V250" stroke="#64748b" stroke-width="2" marker-end="url(#arr)"/>
+          <rect x="315" y="260" width="405" height="38" rx="9" fill="#edf2ff" stroke="#b8c7f7"/>
+          <text x="517" y="284" text-anchor="middle" font-size="12" font-weight="700" fill="#3157d5">Residual / 下一层 Transformer Block</text>
+          <text x="27" y="153" font-size="11" fill="#64748b">Attention 路径</text>
+          <text x="27" y="170" font-size="11" fill="#64748b">压缩 KV 表示</text>
+          <text x="27" y="232" font-size="11" fill="#64748b">MoE 路径</text>
+          <text x="27" y="249" font-size="11" fill="#64748b">稀疏激活专家</text>
+        </svg>
+      </div>
+      <p class="small muted">示意图只表达模块关系，不代表完整计算图、层归一化位置或所有残差细节。论文除第一层 FFN 外，其余 FFN 替换为 MoE 层。</p>
+      <table>
+        <thead><tr><th>模块</th><th>优化对象</th><th>关键机制</th><th>主要收益</th></tr></thead>
+        <tbody>
+          <tr><td>MLA</td><td>Attention KV</td><td>低秩联合压缩、解耦 RoPE、矩阵吸收</td><td>KV Cache / 推理访存</td></tr>
+          <tr><td>DeepSeekMoE</td><td>FFN 计算</td><td>细粒度 routed experts、shared experts、Top-K</td><td>激活 FLOPs / 参数效率</td></tr>
+          <tr><td>Device-limited routing</td><td>EP 通信</td><td>每个 token 最多路由到 M 个设备</td><td>限制 All-to-All 通信范围</td></tr>
+          <tr><td>Balance losses</td><td>专家与设备负载</td><td>Expert / Device / Communication loss</td><td>减少热点与空闲设备</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="mla">
+      <div class="kicker">04 · Multi-Head Latent Attention</div>
+      <h2>MLA：低秩 Key-Value 联合压缩</h2>
+      <h3>4.1 从标准 MHA 开始</h3>
+      <p>令输入 hidden state 为 $h_t\in\mathbb{R}^{d}$，注意力头数为 $n_h$，每头维度为 $d_h$。标准 MHA 通过三个投影得到 Q、K、V：</p>
+      <div class="mathbox">
+        <div class="caption">Standard MHA</div>
+        $$q_t=W^Qh_t,\qquad k_t=W^Kh_t,\qquad v_t=W^Vh_t.$$
+        $$o_{t,i}=\sum_{j\le t}\operatorname{Softmax}_j\left(\frac{q_{t,i}^{T}k_{j,i}}{\sqrt{d_h}}\right)v_{j,i}.$$
+      </div>
+      <p>推理时，每层每 token 需要存储所有 heads 的 K 和 V，因此 KV Cache 元素数为：</p>
+      <div class="mathbox">$$M_{\mathrm{MHA}}=2n_hd_h\quad\text{(每层、每 token)}.$$</div>
+
+      <h3>4.2 MLA 的核心：先压缩，再按 head 展开</h3>
+      <p>MLA 不直接生成每个 head 的 Key 和 Value，而是将二者共同映射到一个低维 latent vector：</p>
+      <div class="mathbox">
+        <div class="caption">论文公式 (9)–(11)：Low-Rank KV Joint Compression</div>
+        $$c_t^{KV}=W^{DKV}h_t,\qquad c_t^{KV}\in\mathbb{R}^{d_c}.$$
+        $$k_t^C=W^{UK}c_t^{KV},\qquad v_t^C=W^{UV}c_t^{KV}.$$
+      </div>
+      <p>其中 $W^{DKV}$ 是 down-projection，$W^{UK}$ / $W^{UV}$ 分别是 Key / Value 的 up-projection。关键在于：<strong>推理时缓存的是 $c_t^{KV}$，而不是展开后的 $k_t^C$ 和 $v_t^C$。</strong></p>
+      <div class="callout teal">
+        <strong>直观理解：</strong>把“每个 head 各自保存一份 K/V”改成“所有 heads 共用一份压缩 latent，再由各自的投影矩阵读取”。压缩本身降低缓存容量；接下来的矩阵吸收则进一步避免推理时把 latent 展开成完整 K/V。
+      </div>
+
+      <h3>4.3 Query 也做低秩压缩</h3>
+      <p>论文同时压缩 Query，主要目的是降低训练过程中的 activation memory；它本身并不减少 KV Cache。</p>
+      <div class="mathbox">
+        $$c_t^Q=W^{DQ}h_t,\qquad q_t^C=W^{UQ}c_t^Q.$$
+        $$c_t^Q\in\mathbb{R}^{d'_c},\quad d'_c\ll n_hd_h.$$
+      </div>
+      <p class="small muted">注意：KV 压缩和 Query 压缩的收益不同。$c^{KV}$ 决定推理缓存大小；$c^Q$ 主要影响 Query 投影和训练激活开销。</p>
+    </section>
+
+    <section id="mla-absorb">
+      <div class="kicker">05 · Matrix Absorption</div>
+      <h2>Matrix Absorption：为什么可以不显式恢复 K/V？</h2>
+      <p class="lead">这部分是全文最值得手推的内容。矩阵吸收的本质是：<strong>将原本发生在历史 token 上的 KV up-projection，利用矩阵结合律重排到当前 Query 和最终输出路径。</strong></p>
+
+      <h3>5.1 Key 侧吸收：把 $W^{UK}$ 移到 Query 路径</h3>
+      <p>先只看第 $i$ 个 head 的内容 Key（暂时不考虑 RoPE）。对于历史 token $j$：</p>
+      <div class="mathbox">
+        $$k_{j,i}^{C}=W_{UK,i}c_j^{KV}.$$
+        $$s_{t,j,i}=(q_{t,i}^{C})^Tk_{j,i}^{C}
+        =(q_{t,i}^{C})^TW_{UK,i}c_j^{KV}.$$
+      </div>
+      <p>利用 $(AB)^T=B^TA^T$，把矩阵乘法重新结合：</p>
+      <div class="mathbox">
+        <div class="caption">Key-side Absorption</div>
+        $$s_{t,j,i}=\underbrace{(W_{UK,i}^{T}q_{t,i}^{C})}_{\widetilde q_{t,i}\in\mathbb{R}^{d_c}}{}^{T}c_j^{KV}.$$
+        $$\boxed{\widetilde q_{t,i}=W_{UK,i}^{T}q_{t,i}^{C}}$$
+      </div>
+      <p>这样，Attention 的 QK 点积就变成：</p>
+      <div class="mathbox">$$s_{t,j,i}=\widetilde q_{t,i}^{T}c_j^{KV}.$$</div>
+      <p>原先每个历史 token 都需要先执行 $c_j^{KV}\rightarrow k_{j,i}^{C}$；现在每个当前 Query 只需变换一次，之后直接与缓存的 latent $c_j^{KV}$ 做点积。历史 Key 不必逐 token 展开。</p>
+
+      <h3>5.2 再把吸收矩阵并入 Query 的低秩投影</h3>
+      <p>因为 $q_{t,i}^{C}=W_{UQ,i}c_t^Q$，所以：</p>
+      <div class="mathbox">
+        $$\widetilde q_{t,i}=W_{UK,i}^{T}W_{UQ,i}c_t^Q.$$
+        $$\boxed{\widetilde W_{UQ,i}=W_{UK,i}^{T}W_{UQ,i}}$$
+      </div>
+      <p>推理实现可以把 $W_{UK,i}^{T}$ 与 $W_{UQ,i}$ 预先合并为一个等价的 Query 投影矩阵。每个 decode step 不必先恢复完整 $q_i^C$ 再乘 $W_{UK,i}^{T}$，而是直接得到 latent-space query。</p>
+
+      <h3>5.3 Value 侧吸收：先做加权求和，再恢复输出</h3>
+      <p>Attention 权重记为 $a_{t,j,i}$。标准 Value 路径为：</p>
+      <div class="mathbox">
+        $$o_{t,i}=\sum_j a_{t,j,i}v_{j,i}^{C}
+        =\sum_j a_{t,j,i}W_{UV,i}c_j^{KV}.$$
+        $$=W_{UV,i}\left(\sum_j a_{t,j,i}c_j^{KV}\right).$$
+      </div>
+      <p>令 latent-space 的加权结果为 $z_{t,i}=\sum_j a_{t,j,i}c_j^{KV}$，则：</p>
+      <div class="mathbox">
+        $$o_{t,i}=W_{UV,i}z_{t,i}.$$
+        $$u_t=W^O[W_{UV,1}z_{t,1};\ldots;W_{UV,n_h}z_{t,n_h}].$$
+      </div>
+      <p>由于 $W^O$ 也是线性变换，可以在代数上把各 head 的 $W_{UV,i}$ 与 $W^O$ 合成一个等价输出矩阵：</p>
+      <div class="mathbox">$$\boxed{\widetilde W^O=W^O\operatorname{BlockDiag}(W_{UV,1},\ldots,W_{UV,n_h})}.$$</div>
+      <p>因此不需要为每个历史 token 逐个生成完整 Value。实际推理 kernel 可以显式执行 latent 输出到 Value 的投影，也可以把投影融合进输出侧算子；是否物理融合取决于具体后端实现。</p>
+
+      <h3>5.4 一张表看懂两侧吸收</h3>
+      <table>
+        <thead><tr><th>路径</th><th>传统计算</th><th>吸收后的计算</th><th>避免的工作</th></tr></thead>
+        <tbody>
+          <tr><td>Key</td><td>$c_j^{KV}\to W_{UK,i}c_j^{KV}$，每个历史 token 展开 K</td><td>$q_{t,i}^{C}\to W_{UK,i}^{T}q_{t,i}^{C}$，Query 映射到 latent 空间</td><td>不必为历史 token 显式恢复 K</td></tr>
+          <tr><td>Value</td><td>先展开每个 $v_{j,i}$，再按注意力权重求和</td><td>先对 $c_j^{KV}$ 加权求和，再执行 $W_{UV,i}$ / 输出投影</td><td>不必逐历史 token 显式恢复 V</td></tr>
+        </tbody>
+      </table>
+      <div class="callout amber">
+        <strong>不要误解为“没有 K/V 计算”。</strong>矩阵吸收改变的是计算位置和中间表示：Key 的 up-projection 被吸收到 Query；Value 的 up-projection被推迟到加权求和之后或融合到输出侧。Attention 仍然要计算分数、Softmax 和加权聚合。
+      </div>
+    </section>
+
+    <section id="rope">
+      <div class="kicker">06 · Decoupled RoPE</div>
+      <h2>为什么 MLA 必须使用 Decoupled RoPE？</h2>
+      <p>如果直接对压缩后的内容 Key $k^C=W^{UK}c^{KV}$ 施加 RoPE，那么位置相关的旋转矩阵会插入 $W^{UK}$ 与 Query 的矩阵乘法之间。由于 RoPE 矩阵依赖 token 位置，不能像固定权重那样简单预合并。</p>
+      <div class="mathbox">
+        <div class="caption">直接对内容 Key 使用 RoPE 时的结构（示意）</div>
+        $$q_t^TR_t^TR_jW^{UK}c_j^{KV}.$$
+        <p class="small muted">其中 $R_t$、$R_j$ 分别对应 Query 与 Key 的位置旋转。$R_t^TR_j$ 随 $(t,j)$ 变化，无法并入一个固定的 Query 权重。</p>
+      </div>
+      <p>DeepSeek-V2 将内容通道与位置通道拆开：内容部分不做 RoPE，另建一组较小维度的 Query/Key 专门承载位置信息。</p>
+      <div class="mathbox">
+        <div class="caption">Decoupled RoPE（论文公式 14–19）</div>
+        $$q_{t,i}=[q_{t,i}^{C};q_{t,i}^{R}],\qquad
+        k_{t,i}=[k_{t,i}^{C};k_t^{R}].$$
+        $$q_t^R=\operatorname{RoPE}(W^{QR}c_t^Q),\qquad
+        k_t^R=\operatorname{RoPE}(W^{KR}h_t).$$
+        $$\operatorname{score}_{t,j,i}=
+        \frac{(q_{t,i}^{C})^TW_{UK,i}c_j^{KV}+
+        (q_{t,i}^{R})^Tk_j^R}{\sqrt{d_h+d_h^R}}.$$
+      </div>
+      <p>现在内容部分可以继续做矩阵吸收：</p>
+      <div class="mathbox">$$\operatorname{score}_{t,j,i}=
+      \frac{\widetilde q_{t,i}^{T}c_j^{KV}+
+      (q_{t,i}^{R})^Tk_j^R}{\sqrt{d_h+d_h^R}}.$$</div>
+      <div class="callout teal">
+        <strong>记忆点：</strong>内容 Key 走 latent-space dot product；位置信息走独立 RoPE 子空间。推理缓存因此不是只有 $c^{KV}$，还必须保存共享的 $k^R$。
+      </div>
+    </section>
+
+    <section id="cache">
+      <div class="kicker">07 · KV Cache Accounting</div>
+      <h2>KV Cache：把论文参数代入算一遍</h2>
+      <p>DeepSeek-V2 的 MLA 配置：$n_h=128$、$d_h=128$、$d_c=512=4d_h$、$d_h^R=64=d_h/2$。</p>
+      <table>
+        <thead><tr><th>机制</th><th>每 token、每层缓存元素</th><th>DeepSeek-V2 对应数值</th></tr></thead>
+        <tbody>
+          <tr><td>标准 MHA</td><td>$2n_hd_h$</td><td>$2\times128\times128=32768$</td></tr>
+          <tr><td>MLA</td><td>$d_c+d_h^R$</td><td>$512+64=576$</td></tr>
+          <tr><td>等效 GQA 组数</td><td>$2n_gd_h=576$</td><td>$n_g=2.25$</td></tr>
+        </tbody>
+      </table>
+      <div class="grid4">
+        <div class="metric"><strong>576</strong><span>MLA 每 token / 每层元素数</span></div>
+        <div class="metric"><strong>32,768</strong><span>128-head MHA 对照</span></div>
+        <div class="metric"><strong>1.76%</strong><span>MLA / MHA 元素数比例</span></div>
+        <div class="metric"><strong>98.24%</strong><span>同维度 MHA 对照下理论减少比例</span></div>
+      </div>
+      <div class="mathbox">
+        $$\text{Cache Ratio}=\frac{576}{32768}\approx1.758\%.$$
+        $$\text{Element Reduction}\approx98.242\%.$$
+      </div>
+      <div class="callout red">
+        <strong>论文的 93.3% 与上面的 98.24% 不是同一个比较口径。</strong>98.24% 是按 DeepSeek-V2 的 128-head MHA 结构、只比较每 token 每层元素数量得到的理论对照；论文摘要中的 93.3% 是相对 DeepSeek 67B 的实际部署比较，部署中还使用 FP8 权重与平均约 6-bit KV Cache 量化。不要把两个数字混为一谈。
+      </div>
+    </section>
+
+    <section id="moe">
+      <div class="kicker">08 · DeepSeekMoE</div>
+      <h2>DeepSeekMoE：细粒度专家 + 共享专家</h2>
+      <p>DeepSeekMoE 的两个关键思想：</p>
+      <ol>
+        <li><strong>Fine-grained Expert Segmentation：</strong>把专家切得更细，增加组合与专业化空间。</li>
+        <li><strong>Shared Expert Isolation：</strong>隔离少量共享专家，吸收不同 token 之间共通的知识，降低 routed experts 重复学习相同知识的冗余。</li>
+      </ol>
+      <h3>8.1 一个 token 的 FFN 输出</h3>
+      <div class="mathbox">
+        $$h'_t=u_t+
+        \sum_{i=1}^{N_s}\operatorname{FFN}^{(s)}_i(u_t)+
+        \sum_{i=1}^{N_r}g_{i,t}\operatorname{FFN}^{(r)}_i(u_t).$$
+        $$s_{i,t}=\operatorname{Softmax}_i(u_t^Te_i),\qquad
+        g_{i,t}=\begin{cases}s_{i,t},&i\in\operatorname{TopK}(s_t,K_r),\\0,&\text{otherwise.}\end{cases}$$
+      </div>
+      <p>符号说明：$N_s$ 为共享专家数，$N_r$ 为 routed experts 数，$K_r$ 为每个 token 激活的 routed experts 数，$e_i$ 是第 $i$ 个专家的 centroid / router 向量，$s_{i,t}$ 是 token 对专家的 affinity。</p>
+      <h3>8.2 DeepSeek-V2 的实际配置</h3>
+      <div class="grid4">
+        <div class="metric"><strong>2</strong><span>Shared Experts</span></div>
+        <div class="metric"><strong>160</strong><span>Routed Experts</span></div>
+        <div class="metric"><strong>6</strong><span>每 token 激活 routed experts</span></div>
+        <div class="metric"><strong>1536</strong><span>每个专家的 intermediate dim</span></div>
+      </div>
+      <p>除第一层 FFN 外，其他 FFN 均替换为 MoE 层。每个 token 会经过 2 个共享专家，并从 160 个 routed experts 中选择 6 个。总参数量为 236B，但每个 token 只激活约 21B 参数。</p>
+    </section>
+
+    <section id="routing">
+      <div class="kicker">09 · Device-limited Routing</div>
+      <h2>Device-limited Routing：限制的是设备数，不是专家数</h2>
+      <p>细粒度专家增加了每个 token 的可选专家数。如果 Top-K 专家分布在很多设备上，token 的 hidden states 就需要被发送到更多设备，MoE 的 All-to-All 通信可能成为瓶颈。</p>
+      <div class="diagram">
+        <svg viewBox="0 0 920 255" role="img" aria-label="Device limited routing diagram">
+          <defs><marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#64748b"/></marker></defs>
+          <rect x="20" y="88" width="115" height="66" rx="10" fill="#edf2ff" stroke="#aabcf5"/>
+          <text x="77" y="115" text-anchor="middle" font-size="14" font-weight="700" fill="#3157d5">Token</text>
+          <text x="77" y="135" text-anchor="middle" font-size="11" fill="#53678f">hidden state</text>
+          <path d="M135 121 H190" stroke="#64748b" stroke-width="2" marker-end="url(#arr2)"/>
+          <rect x="200" y="67" width="160" height="108" rx="10" fill="#f7f9fc" stroke="#c5d0df"/>
+          <text x="280" y="91" text-anchor="middle" font-size="13" font-weight="700" fill="#34425b">Router</text>
+          <text x="280" y="113" text-anchor="middle" font-size="11" fill="#65748b">计算 expert affinity</text>
+          <text x="280" y="134" text-anchor="middle" font-size="11" fill="#65748b">先选 M 个设备</text>
+          <text x="280" y="153" text-anchor="middle" font-size="11" fill="#65748b">再在设备内 Top-K</text>
+          <path d="M360 121 H415" stroke="#64748b" stroke-width="2" marker-end="url(#arr2)"/>
+          <rect x="425" y="20" width="145" height="72" rx="9" fill="#e7f7f6" stroke="#7cc9c5"/>
+          <text x="497" y="45" text-anchor="middle" font-size="13" font-weight="700" fill="#075d66">Device 1</text>
+          <text x="497" y="65" text-anchor="middle" font-size="11" fill="#256d74">Experts subset</text>
+          <rect x="425" y="101" width="145" height="72" rx="9" fill="#e7f7f6" stroke="#7cc9c5"/>
+          <text x="497" y="126" text-anchor="middle" font-size="13" font-weight="700" fill="#075d66">Device 2</text>
+          <text x="497" y="146" text-anchor="middle" font-size="11" fill="#256d74">Experts subset</text>
+          <rect x="425" y="182" width="145" height="55" rx="9" fill="#e7f7f6" stroke="#7cc9c5"/>
+          <text x="497" y="205" text-anchor="middle" font-size="13" font-weight="700" fill="#075d66">Device 3</text>
+          <text x="497" y="222" text-anchor="middle" font-size="11" fill="#256d74">Experts subset</text>
+          <path d="M570 56 H630 M570 137 H630 M570 209 H630" stroke="#64748b" stroke-width="2" marker-end="url(#arr2)"/>
+          <rect x="640" y="67" width="245" height="108" rx="10" fill="#fff4e2" stroke="#e7bd78"/>
+          <text x="762" y="94" text-anchor="middle" font-size="14" font-weight="700" fill="#87500c">Selected Top-K Experts</text>
+          <text x="762" y="118" text-anchor="middle" font-size="12" fill="#94611f">Kᵣ = 6 experts</text>
+          <text x="762" y="141" text-anchor="middle" font-size="12" fill="#94611f">覆盖设备数 ≤ M = 3</text>
+        </svg>
+      </div>
+      <p>流程是：</p>
+      <ol>
+        <li>先计算 token 对 routed experts 的 affinity scores。</li>
+        <li>先选出拥有高 affinity experts 的 $M$ 个设备。</li>
+        <li>只在这 $M$ 个设备所承载的 experts 中执行 Top-K。</li>
+      </ol>
+      <table>
+        <thead><tr><th>符号</th><th>含义</th><th>DeepSeek-V2 训练配置</th></tr></thead>
+        <tbody>
+          <tr><td>$D$</td><td>设备 / 专家组数量</td><td>8</td></tr>
+          <tr><td>$M$</td><td>每个 token 最多触达的设备数</td><td>3</td></tr>
+          <tr><td>$K_r$</td><td>每个 token 激活的 routed experts 数</td><td>6</td></tr>
+        </tbody>
+      </table>
+      <div class="callout amber">
+        <strong>论文的经验观察：</strong>当 $M\ge3$ 时，device-limited routing 的效果大致可以与不限制设备的 Top-K routing 对齐。这里 $M=3$ 是设备数上限，$K_r=6$ 是专家数，二者不要混淆。
+      </div>
+    </section>
+
+    <section id="balance">
+      <div class="kicker">10 · Load Balancing</div>
+      <h2>三类负载均衡损失：Expert / Device / Communication</h2>
+      <p>论文明确指出，负载不均衡会导致两类问题：一是部分专家被过度选择、部分专家训练不足，产生 routing collapse；二是 EP 设备之间的计算和通信不均，降低整体吞吐。</p>
+
+      <h3>10.1 Expert-level Balance</h3>
+      <p>先约束专家维度上的 token 分配。令 $T$ 为统计窗口中的 token 数，$f_i$ 是专家 $i$ 的归一化实际负载，$P_i$ 是 router 给专家 $i$ 的平均概率：</p>
+      <div class="mathbox">
+        $$\mathcal L_{\mathrm{ExpBal}}=
+        \alpha_1\sum_{i=1}^{N_r}f_iP_i.$$
+        $$f_i=\frac{N_r}{K_rT}\sum_{t=1}^{T}
+        \mathbb{1}(\text{token }t\text{ selects expert }i),$$
+        $$P_i=\frac{1}{T}\sum_{t=1}^{T}s_{i,t}.$$
+      </div>
+      <p>直觉：如果一个专家已经接收了大量 token，同时 router 仍给它很高的平均概率，那么乘积项就会变大。损失鼓励实际负载和 router 概率不要长期集中到少数专家。</p>
+
+      <h3>10.2 Device-level Balance</h3>
+      <p>将 routed experts 分成 $D$ 个组，每组部署在一个设备上。对设备 $d$，汇总该设备所含专家的平均负载和路由概率：</p>
+      <div class="mathbox">
+        $$\mathcal L_{\mathrm{DevBal}}=
+        \alpha_2\sum_{d=1}^{D}f'_dP'_d.$$
+        $$f'_d=\frac{1}{|\mathcal E_d|}
+        \sum_{j\in\mathcal E_d}f_j,\qquad
+        P'_d=\sum_{j\in\mathcal E_d}P_j.$$
+      </div>
+      <p>它解决的是“某张 GPU 上的专家组太忙、另一张 GPU 上的专家组太闲”的计算负载问题。它不等价于 expert-level balance：单个专家均匀，不代表设备间一定均匀。</p>
+
+      <h3>10.3 Communication Balance</h3>
+      <p>Device-limited routing 约束了每个 token 的发送范围，但某设备仍可能接收远多于其他设备的 token。因此论文额外定义接收通信负载：</p>
+      <div class="mathbox">
+        $$\mathcal L_{\mathrm{CommBal}}=
+        \alpha_3\sum_{d=1}^{D}f''_dP''_d.$$
+        $$f''_d=\frac{D}{MT}\sum_{t=1}^{T}
+        \mathbb{1}(\text{token }t\text{ is sent to device }d),$$
+        $$P''_d=\sum_{j\in\mathcal E_d}P_j.$$
+      </div>
+      <p>论文给出的目标是：在发送端，每个设备最多发送约 $MT$ 个 hidden states；同时通过通信均衡损失，鼓励每个设备接收的 hidden states 也在约 $MT$ 的量级。</p>
+
+      <h3>10.4 三类损失分别在平衡什么？</h3>
+      <table>
+        <thead><tr><th>损失</th><th>统计对象</th><th>主要防止</th><th>不均衡后果</th></tr></thead>
+        <tbody>
+          <tr><td>ExpBal</td><td>单个 expert</td><td>专家路由塌缩</td><td>部分专家过载、部分专家欠训练</td></tr>
+          <tr><td>DevBal</td><td>设备上的专家组</td><td>计算负载不均</td><td>GPU 间计算时间不一致</td></tr>
+          <tr><td>CommBal</td><td>设备接收的 token / hidden states</td><td>通信流量热点</td><td>All-to-All 接收端成为瓶颈</td></tr>
+        </tbody>
+      </table>
+      <h3>10.5 训练超参与 Token Dropping</h3>
+      <div class="grid4">
+        <div class="metric"><strong>0.003</strong><span>$\alpha_1$ · Expert</span></div>
+        <div class="metric"><strong>0.05</strong><span>$\alpha_2$ · Device</span></div>
+        <div class="metric"><strong>0.02</strong><span>$\alpha_3$ · Communication</span></div>
+        <div class="metric"><strong>1.0</strong><span>Device token capacity factor</span></div>
+      </div>
+      <p>论文还使用 device-level token dropping：先按每个设备的平均计算预算设置 capacity factor = 1.0，再在设备内丢弃 affinity 最低的 token，直到满足预算；约 10% 的训练序列被设置为永不丢 token。评估时不丢 token。</p>
+      <div class="callout red">
+        <strong>版本辨析：</strong>DeepSeek-V2 在论文中明确使用三类 auxiliary losses。不要把它写成 DeepSeek-V3 后来提出的 auxiliary-loss-free / loss-free load balancing。两者的训练目标和路由机制不是同一个设计。
+      </div>
+    </section>
+
+    <section id="training">
+      <div class="kicker">11 · Training & System</div>
+      <h2>训练配置与系统实现</h2>
+      <table>
+        <thead><tr><th>配置项</th><th>论文数值 / 设计</th><th>研读备注</th></tr></thead>
+        <tbody>
+          <tr><td>Transformer layers</td><td>60</td><td>除第一层 FFN 外，其余 FFN 为 MoE</td></tr>
+          <tr><td>Hidden dimension</td><td>5120</td><td>模型主干宽度</td></tr>
+          <tr><td>Attention heads</td><td>128 × 128</td><td>128 heads，每 head 维度 128</td></tr>
+          <tr><td>KV compression rank</td><td>$d_c=512$</td><td>$4d_h$</td></tr>
+          <tr><td>Query compression rank</td><td>$d'_c=1536$</td><td>用于 Query 低秩压缩</td></tr>
+          <tr><td>Decoupled RoPE dim</td><td>$d_h^R=64$</td><td>每 token 还需缓存共享 RoPE Key</td></tr>
+          <tr><td>MoE experts</td><td>2 shared + 160 routed</td><td>每 token Top-6 routed experts</td></tr>
+          <tr><td>Pretraining tokens</td><td>8.1T</td><td>预训练最大序列长度 4K</td></tr>
+          <tr><td>Long context</td><td>128K</td><td>使用 YaRN 将默认上下文从 4K 扩展至 128K</td></tr>
+        </tbody>
+      </table>
+      <h3>并行策略</h3>
+      <div class="three-col">
+        <div class="mini-card"><h4>16-way PP</h4><p>Pipeline Parallelism：不同层分布到不同设备。</p></div>
+        <div class="mini-card"><h4>8-way EP</h4><p>Expert Parallelism：每层 routed experts 均匀部署在 8 个设备。</p></div>
+        <div class="mini-card"><h4>ZeRO-1 DP</h4><p>Data Parallelism：使用 ZeRO-1。论文称无需 Tensor Parallelism。</p></div>
+      </div>
+      <p>训练系统基于内部 HAI-LLM 框架。论文还提到：共享专家计算与 EP All-to-All 通信重叠；为通信、路由和跨专家融合线性层定制 CUDA kernel；MLA 基于改进版 FlashAttention-2 优化。</p>
+      <p>硬件为 NVIDIA H800 集群：单节点 8 GPU，节点内使用 NVLink / NVSwitch，跨节点使用 InfiniBand。</p>
+    </section>
+
+    <section id="results">
+      <div class="kicker">12 · Results</div>
+      <h2>实验结果与解读</h2>
+      <div class="grid4">
+        <div class="metric"><strong>42.5%</strong><span>每训练 1T tokens 的 GPU 小时成本节省</span></div>
+        <div class="metric"><strong>93.3%</strong><span>相对 DeepSeek 67B 的 KV Cache 减少</span></div>
+        <div class="metric"><strong>50K+</strong><span>单节点 8×H800 的生成 tokens/s</span></div>
+        <div class="metric"><strong>5.76×</strong><span>最大生成吞吐相对 DeepSeek 67B</span></div>
+      </div>
+      <p>训练成本比较：每训练 1T tokens，DeepSeek 67B 需要 300.6K GPU hours，DeepSeek-V2 需要 172.8K GPU hours。推理部署还将模型权重量化到 FP8，并将 KV Cache 每元素平均压缩到约 6 bits。</p>
+      <h3>部分 benchmark（Base Model）</h3>
+      <table>
+        <thead><tr><th>Benchmark</th><th>DeepSeek-V2</th><th>LLaMA 3 70B</th><th>观察</th></tr></thead>
+        <tbody>
+          <tr><td>MMLU</td><td>78.5</td><td>78.9</td><td>整体接近</td></tr>
+          <tr><td>BBH</td><td>78.9</td><td>81.0</td><td>略低</td></tr>
+          <tr><td>C-Eval</td><td>81.7</td><td>67.5</td><td>中文基准优势明显</td></tr>
+          <tr><td>CMMLU</td><td>84.0</td><td>69.3</td><td>中文基准优势明显</td></tr>
+          <tr><td>GSM8K</td><td>79.2</td><td>83.0</td><td>略低</td></tr>
+          <tr><td>MATH</td><td>43.6</td><td>42.2</td><td>略高</td></tr>
+          <tr><td>HumanEval</td><td>48.8</td><td>48.2</td><td>接近</td></tr>
+        </tbody>
+      </table>
+      <p class="small muted">注：表格摘取论文 Table 2 的部分指标，仅用于快速建立整体印象。不同 benchmark 的评测设定、shot 数和内部评测框架需以论文原表为准。</p>
+    </section>
+
+    <section id="cp">
+      <div class="kicker">13 · CP Research Connection</div>
+      <h2>MLA 与 Context Parallelism：如何连接两条研究线？</h2>
+      <p class="lead">这一节是基于论文公式与公开推理框架源码做的工程延伸分析，不是 DeepSeek-V2 原论文提出的 CP 算法。</p>
+      <h3>13.1 先把 EP 与 CP 分开</h3>
+      <table>
+        <thead><tr><th>并行方式</th><th>切分对象</th><th>主要通信</th><th>DeepSeek-V2 论文中的角色</th></tr></thead>
+        <tbody>
+          <tr><td>EP</td><td>专家集合 / experts</td><td>token dispatch / combine，常见 All-to-All</td><td>明确使用 8-way EP</td></tr>
+          <tr><td>CP</td><td>序列 / context tokens</td><td>跨分片 attention 的 KV、softmax 统计量和部分输出</td><td>原论文没有提出训练 CP 方案</td></tr>
+          <tr><td>PP</td><td>Transformer layers</td><td>pipeline stage 间激活传递</td><td>使用 16-way PP</td></tr>
+        </tbody>
+      </table>
+      <h3>13.2 MLA 对 CP 的潜在收益</h3>
+      <p>如果 CP rank 之间传输的是 MLA 的压缩缓存，而不是展开后的多头 K/V，那么每个 token 的 KV payload 理论上可从 $2n_hd_h$ 个元素降到 $d_c+d_h^R$ 个元素。DeepSeek-V2 的对应数值是 32768 → 576。</p>
+      <div class="mathbox">
+        $$\text{MHA KV payload/token/layer}=2n_hd_h=32768,$$
+        $$\text{MLA latent payload/token/layer}=d_c+d_h^R=576.$$
+      </div>
+      <p>但这不意味着 CP 通信消失。跨 CP 分片计算全局 attention 时，仍需要正确合并不同分片的 softmax 归一化统计量（例如 max / sum-exp 或 LSE）以及加权 Value 部分结果。MLA 主要压缩被传输或缓存的 K/V 表示，并不改变 attention 对全局上下文的依赖。</p>
+      <h3>13.3 一个值得验证的 CP + MLA 计算流程</h3>
+      <div class="diagram">
+        <svg viewBox="0 0 960 270" role="img" aria-label="Conceptual context parallel MLA flow">
+          <defs><marker id="arr3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#64748b"/></marker></defs>
+          <rect x="18" y="25" width="205" height="75" rx="10" fill="#eaf0ff" stroke="#aabcf5"/>
+          <text x="120" y="51" text-anchor="middle" font-size="14" font-weight="700" fill="#3157d5">CP Rank 0</text>
+          <text x="120" y="73" text-anchor="middle" font-size="11" fill="#53678f">local cKV + kR</text>
+          <rect x="18" y="125" width="205" height="75" rx="10" fill="#eaf0ff" stroke="#aabcf5"/>
+          <text x="120" y="151" text-anchor="middle" font-size="14" font-weight="700" fill="#3157d5">CP Rank 1</text>
+          <text x="120" y="173" text-anchor="middle" font-size="11" fill="#53678f">local cKV + kR</text>
+          <path d="M223 62 H310 M223 162 H310" stroke="#64748b" stroke-width="2" marker-end="url(#arr3)"/>
+          <rect x="320" y="62" width="235" height="105" rx="10" fill="#e7f7f6" stroke="#7cc9c5"/>
+          <text x="437" y="91" text-anchor="middle" font-size="14" font-weight="700" fill="#075d66">Distributed Attention</text>
+          <text x="437" y="115" text-anchor="middle" font-size="11" fill="#256d74">latent QK + global softmax</text>
+          <text x="437" y="136" text-anchor="middle" font-size="11" fill="#256d74">merge partial outputs / LSE</text>
+          <path d="M555 115 H630" stroke="#64748b" stroke-width="2" marker-end="url(#arr3)"/>
+          <rect x="640" y="62" width="290" height="105" rx="10" fill="#fff4e2" stroke="#e7bd78"/>
+          <text x="785" y="91" text-anchor="middle" font-size="14" font-weight="700" fill="#87500c">Value Up-Projection / Output</text>
+          <text x="785" y="115" text-anchor="middle" font-size="11" fill="#94611f">latent weighted sum → WUV</text>
+          <text x="785" y="136" text-anchor="middle" font-size="11" fill="#94611f">→ WO → residual</text>
+          <text x="480" y="231" text-anchor="middle" font-size="11" fill="#64748b">概念流程：具体 collective、布局与投影位置取决于 prefill / decode 阶段及 attention backend</text>
+        </svg>
+      </div>
+      <ol>
+        <li>每个 CP rank 保存本地 token 的 $c^{KV}$ 与 $k^R$。</li>
+        <li>Query 经过 Key-side absorption，得到 latent-space query。</li>
+        <li>分片 attention 计算局部 logits / 局部统计量，并做全局 softmax 合并。</li>
+        <li>对 latent Value 加权结果做 Value up-projection，再完成输出投影。</li>
+      </ol>
+      <div class="callout amber">
+        <strong>研究中的关键 trade-off：</strong>latent cache 很小，但每个 head 的 latent Value 维度是 $d_c$，比常规 $d_v$ 大。CP 设计不能只看 KV cache bytes，还要同时测量 partial output / LSE 合并开销、Query 复制或聚合开销，以及 Value projection 放在 reduce 前还是 reduce 后的通信量。
+      </div>
+      <h3>13.4 公开实现中可观察到的 CP / DCP 线索</h3>
+      <ul>
+        <li><strong>vLLM MLA：</strong>代码将 `kv_c_normed` 与 `k_pe` 作为 latent cache 输入，并提供 PCP/DCP 管理路径；可查看 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/attention/mla_attention.py#L3684-L3765" target="_blank" rel="noreferrer">KV cache update</a> 与 <a href="https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/attention/mla_attention.py#L3503-L3525" target="_blank" rel="noreferrer">MLA DCP manager</a>。</li>
+        <li><strong>SGLang MLA：</strong>当前实现包含 DCP decode / extend 分支；可查看 <a href="https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py#L2342-L2399" target="_blank" rel="noreferrer">DCP extend KV gather</a>、<a href="https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py#L3685-L3719" target="_blank" rel="noreferrer">decode / extend 的 DCP 分支</a>。</li>
+      </ul>
+      <p class="small muted">术语提示：这里的 DCP 通常指 Decode Context Parallelism，PCP 指 Prefill Context Parallelism。它们是推理系统中的上下文并行实现，不应直接等同于原论文训练并行配置。公开代码随版本演进，阅读时请固定 commit。</p>
+    </section>
+
+    <section id="code">
+      <div class="kicker">14 · Source Code Reading</div>
+      <h2>源码阅读路线：先对齐数学符号，再追张量</h2>
+      <p>推荐先读一个“可读性优先”的参考实现，再读经过优化的 serving 实现。特别注意：Hugging Face 的模型参考实现通常会显式恢复 K/V；高性能推理后端才会根据 prefill / decode 场景选择 latent MQA / absorbed path。</p>
+      <div class="source-list">
+        <div class="source">
+          <strong>1. 论文原文</strong>
+          <a href="https://arxiv.org/html/2405.04434v5" target="_blank" rel="noreferrer">arxiv.org/html/2405.04434v5</a>
+          <p>优先读 §2.1.2–2.1.3（MLA / RoPE）、§2.2.2–2.2.4（路由 / 负载均衡）、§3.1（训练配置）。</p>
+        </div>
+        <div class="source">
+          <strong>2. DeepSeek 官方仓库</strong>
+          <a href="https://github.com/deepseek-ai/DeepSeek-V2" target="_blank" rel="noreferrer">github.com/deepseek-ai/DeepSeek-V2</a>
+          <p>README 说明模型架构、下载方式和官方推荐的推理方案。</p>
+        </div>
+        <div class="source">
+          <strong>3. Hugging Face：DeepSeek-V2 Attention</strong>
+          <a href="https://huggingface.co/deepseek-ai/DeepSeek-V2/blob/main/modeling_deepseek.py#L234-L237" target="_blank" rel="noreferrer">modeling_deepseek.py · DeepseekV2Attention</a>
+          <p>看 `q_a_proj`、`q_b_proj`、`kv_a_proj_with_mqa`、`kv_b_proj`；追踪 compressed_kv 如何被恢复为 K/V，以及 `past_key_value.update` 如何缓存。</p>
+        </div>
+        <div class="source">
+          <strong>4. vLLM：MLA 数学与两种执行路径</strong>
+          <a href="https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/attention/mla_attention.py#L2239-L2341" target="_blank" rel="noreferrer">mla_attention.py · forward_mha / forward_mqa</a>
+          <p>文件注释直接对比 compute-friendly 的 MHA 路径与 data-movement-friendly 的 MQA latent 路径，适合将数学公式映射到代码。</p>
+        </div>
+        <div class="source">
+          <strong>5. vLLM：拆分 W_UK / W_UV</strong>
+          <a href="https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/attention/mla_attention.py#L2871-L2900" target="_blank" rel="noreferrer">split_kv_b_proj()</a>
+          <p>观察 fused `kv_b_proj` 权重如何拆为 Key 的 $W_{UK}$ 与 Value 的 $W_{UV}$。</p>
+        </div>
+        <div class="source">
+          <strong>6. SGLang：Query-side absorption</strong>
+          <a href="https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py#L3147-L3151" target="_blank" rel="noreferrer">forward_mla.py · absorbed Q BMM</a>
+          <p>看 `q_nope.transpose(...)` 与 `w_kc` 的 BMM；这是 $W_{UK}^{T}q$ 在代码中的直接映射。</p>
+        </div>
+        <div class="source">
+          <strong>7. SGLang：权重加载与分解</strong>
+          <a href="https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/models/deepseek_common/deepseek_weight_loader.py" target="_blank" rel="noreferrer">deepseek_weight_loader.py</a>
+          <p>搜索 `post_load_weights`、`w_kc`、`w_vc`，查看 fused KV-B projection 的权重处理、切分和量化路径。</p>
+        </div>
+        <div class="source">
+          <strong>8. SGLang：MoE Top-K</strong>
+          <a href="https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/layers/moe/topk.py" target="_blank" rel="noreferrer">layers/moe/topk.py</a>
+          <p>可追踪推理时的 top-k selection、routing weights、shared expert 追加与 fused dispatch。注意：这不是论文训练时三类 auxiliary loss 的完整训练代码。</p>
+        </div>
+      </div>
+      <h3>源码中建议搜索的符号</h3>
+      <div class="code">
+<span class="comment"># Hugging Face reference path</span>
+q_a_proj
+q_b_proj
+kv_a_proj_with_mqa
+kv_b_proj
+past_key_value.update
+
+<span class="comment"># vLLM / SGLang MLA path</span>
+split_kv_b_proj
+W_UK
+W_UV
+forward_mqa
+q_nope
+w_kc
+w_vc
+kv_c_normed
+k_pe
+
+<span class="comment"># MoE / EP path</span>
+topk_weights
+topk_ids
+expert_location
+dispatch
+combine
+all_to_all
+      </div>
+      <div class="callout red">
+        <strong>重要源码辨析：</strong>Hugging Face `modeling_deepseek.py` 的参考 forward 会执行 `kv_b_proj` 并构造 K/V，再更新完整的 key/value cache。它适合读懂张量形状和模块关系，但不能据此断言“高性能 decode kernel 没有做 Matrix Absorption”。研究优化推理时应重点看 vLLM / SGLang 的 MLA backend。
+      </div>
+    </section>
+
+    <section id="pitfalls">
+      <div class="kicker">15 · Critical Reading</div>
+      <h2>易混淆点与论文边界</h2>
+      <ol>
+        <li><strong>低秩压缩 ≠ 矩阵吸收。</strong>低秩压缩把 K/V 表示变成 latent；矩阵吸收让推理计算不必显式恢复完整 K/V。两者协同，但不是同一件事。</li>
+        <li><strong>Query 压缩不是 KV Cache 压缩。</strong>$c^Q$ 的主要收益是降低训练激活内存；缓存大小主要由 $c^{KV}$ 与 $k^R$ 决定。</li>
+        <li><strong>RoPE 不是简单地“照常加上去”。</strong>若把 RoPE 施加在被 $W^{UK}$ 展开的内容 Key 上，位置矩阵会妨碍固定矩阵吸收，因此论文采用 decoupled RoPE。</li>
+        <li><strong>93.3% 不是 98.24%。</strong>前者是相对 DeepSeek 67B 的部署指标；后者是按 128-head MHA 元素数计算的理论对照。</li>
+        <li><strong>Device-limited routing 不等于 load balancing。</strong>前者限制每个 token 触达的设备范围；三类 auxiliary losses 进一步控制专家、设备和通信负载。</li>
+        <li><strong>EP 不等于 CP。</strong>EP 切分专家并路由 token；CP 切分序列并分布式计算 attention。DeepSeek-V2 原论文报告 8-way EP、16-way PP、ZeRO-1 DP，没有提出训练 CP 算法。</li>
+        <li><strong>不要把推理代码当训练代码。</strong>公开 serving repo 能追踪 Top-K、dispatch、combine 和 MLA kernel，但不代表论文中所有训练辅助损失和 token dropping 的实现细节都已公开。</li>
+      </ol>
+    </section>
+
+    <section id="questions">
+      <div class="kicker">16 · Further Research</div>
+      <h2>下一步值得验证的研究问题</h2>
+      <h3>Matrix Absorption / Kernel</h3>
+      <ul>
+        <li>在 prefill 和 decode 两个阶段，何时选择 compute-friendly MHA，何时选择 data-movement-friendly latent MQA？阈值与 $S_q/S_{kv}$、batch size、KV length 如何相关？</li>
+        <li>把 $W_{UK}^{T}$ 融入 Query projection 后，BMM 的 shape、内存布局和 head parallel 方式如何变化？</li>
+        <li>Value 侧的 $W_{UV}$ 是独立 BMM、融合到 $W_O$，还是在 CP reduce 后执行？不同选择如何影响通信量和算力？</li>
+        <li>FP8 / INT8 / BF16 下，吸收矩阵的预合并与量化顺序是否影响数值误差？</li>
+      </ul>
+      <h3>CP / DCP</h3>
+      <ul>
+        <li>CP rank 之间究竟传输 latent $c^{KV}+k^R$，还是已经展开的 K/V？实际 bytes/token/layer 是多少？</li>
+        <li>跨分片 softmax 的 max、sum-exp / LSE 与 partial output 如何合并？通信能否与本地 latent attention overlap？</li>
+        <li>若 Value latent 维度 $d_c=512$ 大于 $d_v=128$，将 $W_{UV}$ 放在跨 rank reduce 前或后，哪种布局更优？</li>
+        <li>Prefill CP 与 Decode CP 的瓶颈不同：prefill 更关注长序列并行与 chunked attention，decode 更关注 KV 读取、通信延迟与 batch 并发。</li>
+      </ul>
+      <h3>MoE / EP</h3>
+      <ul>
+        <li>Expert、Device、Communication 三种损失之间是否存在梯度冲突？不同 $\alpha$ 如何改变专家利用率、设备吞吐与 token drop rate？</li>
+        <li>Device-limited routing 的 $M$ 从 1 增加到 8 时，质量、All-to-All bytes、设备热点和尾延迟如何变化？</li>
+        <li>在 CP + EP 混合并行中，token dispatch 的通信拓扑如何与 context attention 的通信拓扑竞争网络带宽？</li>
+      </ul>
+      <h3>阅读完成自测</h3>
+      <div class="checklist">
+        <label><input type="checkbox"> 能独立推导 $q^TW_{UK}c=(W_{UK}^Tq)^Tc$，并说明为什么它能消除历史 Key 的逐 token up-projection。</label>
+        <label><input type="checkbox"> 能解释 Value 加权求和为什么可以先在 latent space 完成，再应用 $W_{UV}$。</label>
+        <label><input type="checkbox"> 能说明 decoupled RoPE 如何让内容 Key 的矩阵吸收重新成立。</label>
+        <label><input type="checkbox"> 能从论文公式计算出 576 个 MLA cache elements，并解释与 93.3% 的口径差异。</label>
+        <label><input type="checkbox"> 能区分 Expert-level、Device-level 和 Communication-level 三类 balance loss。</label>
+        <label><input type="checkbox"> 能画出 EP 和 CP 的切分维度、通信对象及其与 MLA latent cache 的关系。</label>
+      </div>
+    </section>
+
+    <section id="references">
+      <div class="kicker">17 · References</div>
+      <h2>参考资料与阅读顺序</h2>
+      <ol>
+        <li><a href="https://arxiv.org/abs/2405.04434" target="_blank" rel="noreferrer">DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model</a> — 论文摘要、模型架构和实验结论。</li>
+        <li><a href="https://arxiv.org/html/2405.04434v5" target="_blank" rel="noreferrer">论文 HTML 全文（v5）</a> — 公式、表格和章节导航。</li>
+        <li><a href="https://github.com/deepseek-ai/DeepSeek-V2" target="_blank" rel="noreferrer">DeepSeek-V2 官方 GitHub</a> — 模型下载、官方说明和推理入口。</li>
+        <li><a href="https://huggingface.co/deepseek-ai/DeepSeek-V2/blob/main/modeling_deepseek.py" target="_blank" rel="noreferrer">Hugging Face modeling_deepseek.py</a> — 参考实现。</li>
+        <li><a href="https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/attention/mla_attention.py" target="_blank" rel="noreferrer">vLLM MLA Attention</a> — MHA / MQA 两种执行路径、KV cache 与并行实现。</li>
+        <li><a href="https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/models/deepseek_common/attention_forward_methods/forward_mla.py" target="_blank" rel="noreferrer">SGLang forward_mla.py</a> — absorbed Query、MLA attention 和 DCP 分支。</li>
+        <li><a href="https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/models/deepseek_common/deepseek_weight_loader.py" target="_blank" rel="noreferrer">SGLang deepseek_weight_loader.py</a> — MLA 权重拆分与后处理。</li>
+        <li><a href="https://yaoyuanzhou.github.io/papers/tm20k.html" target="_blank" rel="noreferrer">TM20K 论文解读页面</a> — 本笔记参考的组织风格。</li>
+      </ol>
+      <div class="callout">
+        <strong>建议阅读顺序：</strong>论文 §2.1.2 → 手推 Key / Value absorption → §2.1.3 → vLLM `forward_mha / forward_mqa` → SGLang `forward_mla.py` → 论文 §2.2.2–2.2.4 → EP / CP 源码。
+      </div>
+      <p class="small muted">说明：源码链接指向仓库 main 分支，代码会持续演进。做严谨实验时请固定 Git commit、记录模型配置与 kernel backend，并以对应版本的实际执行路径为准。</p>
+    </section>
+    <div class="footer">DeepSeek-V2 论文研读笔记 · 以论文原文为主，源码用于交叉验证 · 2026-11-23</div>
+  </main>
+</div>
+
+<script>
+(function () {
+  const progress = document.getElementById('progress');
+  const tocLinks = Array.from(document.querySelectorAll('.toc a'));
+  const sections = Array.from(document.querySelectorAll('main section[id]'));
+  const search = document.getElementById('searchBox');
+
+  function updateProgress() {
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    progress.style.width = (max > 0 ? (scrollTop / max) * 100 : 0) + '%';
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  updateProgress();
+
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        tocLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === '#' + entry.target.id));
+      });
+    }, { rootMargin: '-12% 0px -72% 0px', threshold: 0 });
+    sections.forEach((section) => observer.observe(section));
+  }
+
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    sections.forEach((section) => {
+      const match = !q || section.innerText.toLowerCase().includes(q);
+      section.classList.toggle('hidden', !match);
+    });
+  });
+})();
+</script>
+</body>
+</html>
